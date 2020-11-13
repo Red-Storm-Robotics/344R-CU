@@ -1,13 +1,25 @@
 #include "main.h"
 
+bool leftAuton = true;
+
 Controller controller;
 ControllerButton intake_fwd(ControllerDigital::L1);
 ControllerButton intake_rev(ControllerDigital::L2);
 ADIButton ball_detect('A');
 
 auto drive = ChassisControllerBuilder().withMotors(1, -2, -10, 9).withDimensions(AbstractMotor::gearset::green, {{4_in, 14_in}, imev5GreenTPR}).build();
+auto profiling = AsyncMotionProfileControllerBuilder().withLimits({1.0, 2.0, 10.0}).withOutput(drive).buildMotionProfileController();
 
 MotorGroup intake({11, -12});
+
+void toggle_auton() {
+	leftAuton = !leftAuton;
+	if (leftAuton) {
+		pros::lcd::set_text(2, "auton: LEFT  (change with btn0)");
+	} else {
+		pros::lcd::set_text(2, "auton: RIGHT (change with btn0)");
+	}
+}
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -17,7 +29,10 @@ MotorGroup intake({11, -12});
  */
 void initialize() {
 	pros::lcd::initialize();
-	pros::lcd::set_text(0, "344R Code");
+	pros::lcd::set_text(0, "344R - Change Up - York 11/14/2020");
+	pros::lcd::print(1, "Compiled at %s %s", __DATE__, __TIME__);
+	pros::lcd::set_text(2, "auton: LEFT  (change with btn0)");
+	pros::lcd::register_btn0_cb(toggle_auton);
 }
 
 /**
@@ -49,7 +64,9 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+void autonomous() {
+	drive->setTurnsMirrored(!leftAuton);
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
