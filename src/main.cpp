@@ -31,8 +31,11 @@ void initialize() {
 	pros::lcd::initialize();
 	pros::lcd::set_text(0, "344R - Change Up - York 11/14/2020");
 	pros::lcd::print(1, "Compiled at %s %s", __DATE__, __TIME__);
+
 	pros::lcd::set_text(2, "auton: LEFT  (change with btn0)");
 	pros::lcd::register_btn0_cb(toggle_auton);
+
+	pros::lcd::set_text(4, "Auton starts 24\" horiz. from ctr home goal");
 }
 
 /**
@@ -66,6 +69,20 @@ void competition_initialize() {}
  */
 void autonomous() {
 	drive->setTurnsMirrored(!leftAuton);
+
+	// Start: 24" horizontally from the center home goal
+
+	// Do a U-turn to face the goal head-on
+	drive->moveDistance(24_in);
+	drive->turnAngle(90_deg);
+	drive->moveDistance(24_in);
+	drive->turnAngle(90_deg);
+
+	// Start the intake, go in and extract the ball, then back up
+	intake.moveVoltage(12000);
+	drive->moveDistance(24_in);
+	drive->moveDistance(-24_in);
+	intake.moveVoltage(0);
 }
 
 /**
