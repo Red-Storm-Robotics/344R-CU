@@ -3,12 +3,13 @@
 bool leftAuton = true;
 
 enum class AutonRoutine {
-	OnePoint,
+	Simple,
+	Complex,
 	TestDrive,
 	TestTurn
 };
 
-AutonRoutine auton_routine = AutonRoutine::OnePoint;
+AutonRoutine auton_routine = AutonRoutine::Complex;
 
 Controller controller;
 ControllerButton intake_fwd(ControllerDigital::L1);
@@ -18,8 +19,15 @@ ADIButton ball_detect('A');
 ControllerButton auton_one(ControllerDigital::A);
 ControllerButton auton_two(ControllerDigital::Y);
 
-auto drive = ChassisControllerBuilder().withMotors(1, -2, -10, 9).withDimensions(AbstractMotor::gearset::green, {{4.1_in, /*19.5_in*/ 15.5_in}, imev5GreenTPR}).build();
-auto profiling = AsyncMotionProfileControllerBuilder().withLimits({0.5, 1.0, 5.0}).withOutput(drive).buildMotionProfileController();
+auto drive = ChassisControllerBuilder()
+	.withMotors(1, -2, -10, 9)
+	.withDimensions(AbstractMotor::gearset::green, {{4.05_in, 15.25_in}, imev5GreenTPR})
+	.build();
+
+auto profiling = AsyncMotionProfileControllerBuilder()
+	.withLimits({0.5, 1.0, 5.0})
+	.withOutput(drive)
+	.buildMotionProfileController();
 
 MotorGroup intake({11, -12});
 
@@ -36,11 +44,14 @@ void draw_screen() {
 	}
 
 	switch (auton_routine) {
-		case AutonRoutine::OnePoint:
-			pros::lcd::set_text(4, "Auton starts 24\" horiz. from ctr home goal");
+		case AutonRoutine::Simple:
+			pros::lcd::set_text(4, "MAIN AUTON - SINGLE BALL");
+			break;
+		case AutonRoutine::Complex:
+			pros::lcd::set_text(4, "MAIN AUTON - MULTIPLE BALL");
 			break;
 		case AutonRoutine::TestDrive:
-		  pros::lcd::set_text(4, "TEST AUTON - Drive forward 17.5\"");
+		  pros::lcd::set_text(4, "TEST AUTON - Drive forward 24 inches");
 			break;
 		case AutonRoutine::TestTurn:
 		  pros::lcd::set_text(4, "TEST AUTON - Turn 90 degrees");
@@ -58,8 +69,8 @@ void toggle_auton() {
 void toggle_test() {
 	auton_routine = (AutonRoutine)(((int)auton_routine) + 1);
 
-	if ((int)auton_routine == 3) {
-		auton_routine = AutonRoutine::OnePoint;
+	if ((int)auton_routine == 4) {
+		auton_routine = AutonRoutine::Simple;
 	}
 	draw_screen();
 }
@@ -101,14 +112,30 @@ void disabled() {}
  */
 void competition_initialize() {}
 
-void one_point_auto() {
+void wait_for_ball() {
+	const int timeout = 10000;
+	int start_time = pros::c::millis();
+	for (;;) {
+		if (pros::c::millis() - start_time > timeout) {
+			return;
+		}
+		if (ball_detect.isPressed()) {
+			return;
+		}
+		pros::c::delay(10);
+	}
+	pros::c::delay(500);
+}
+
+
+void main_auto(int keep_going) {
 	// Start: 24" horizontally from the center home goal
 
-	// Do a U-turn to face the goal head-on
+	// Do a U-turn to face the home-edge-goal head-on
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
-		{36_in, 18_in, 0_deg}
-	}, true);
+		{36_in, 24_in, 0_deg}
+	}, true, !leftAuton);
 
 	// Start the intake, go in and extract the ball, then back up
 	intake.moveVoltage(12000);
@@ -116,34 +143,45 @@ void one_point_auto() {
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
 		{36_in, 0_in, 0_deg}
-	});
+	}, false, !leftAuton);
 
-	while (!ball_detect.isPressed());
-	pros::c::delay(500);
+	wait_for_ball();
 
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
 		{36_in, 0_in, 0_deg}
-	}, true);
+	}, true, !leftAuton);
 
-	// Turn to the side and spit out the ball
+	if (!keep_going) {
+		return;
+	}
 
-	drive->setMaxVelocity(100);
-	drive->turnAngle(-90_deg);
-	intake.moveVoltage(-12000);
+	// Slowly spit out the ball
+	intake.moveVoltage(-6000);
 	pros::c::delay(5000);
-	intake.moveVoltage(0);
 
-	// Move towards the corner goal
+	// Turn towards the center-edge goal
 
-	intake.moveVoltage(0);
-	drive->turnAngle(-180_deg);
+	drive->setMaxVelocity(50);
+	drive->turnAngle(90_deg);
 	drive->setMaxVelocity(default_vel);
 
+	// Move towards the other edge goal, sweeping the red ball out of the way
+
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
-		{48_in, 0_in, 45_deg}
-	});
+		{48_in, -24_in, 90_deg}
+	}, false, !leftAuton);
+
+	// Sweep the ball a bit further
+
+	drive->setMaxVelocity(50);
+	drive->moveDistance(12_in);
+	drive->moveDistance(-12_in);
+
+	// Turn to face the center-edge goal
+	drive->turnAngle(-90_deg);
+	drive->setMaxVelocity(default_vel);
 
 	// Start the intake, go in and extract the ball, then back up
 	intake.moveVoltage(12000);
@@ -151,17 +189,16 @@ void one_point_auto() {
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
 		{36_in, 0_in, 0_deg}
-	});
+	}, false, !leftAuton);
 
-	while (!ball_detect.isPressed());
-	pros::c::delay(500);
+	wait_for_ball();
 
 	profiling->moveTo({
 		{0_in, 0_in, 0_deg},
 		{36_in, 0_in, 0_deg}
-	}, true);
+	}, true, !leftAuton);
 
-	pros::c::delay(5000);
+	pros::c::delay(1000);
 	intake.moveVoltage(0);
 }
 
@@ -180,14 +217,17 @@ void autonomous() {
 	drive->setTurnsMirrored(!leftAuton);
 
 	switch (auton_routine) {
-		case AutonRoutine::OnePoint:
-			one_point_auto();
+		case AutonRoutine::Simple:
+			main_auto(false);
+			break;
+		case AutonRoutine::Complex:
+			main_auto(true);
 			break;
 		case AutonRoutine::TestDrive:
 			profiling->moveTo({
 				{0_in, 0_in, 0_deg},
-				{17.5_in, 0_in, 0_deg}
-			});
+				{24_in, 0_in, 0_deg}
+			}, false, !leftAuton);
 			break;
 		case AutonRoutine::TestTurn:
 			/*
@@ -199,6 +239,7 @@ void autonomous() {
 			drive->setMaxVelocity(100);
 			drive->turnAngle(90_deg);
 			drive->setMaxVelocity(default_vel);
+			break;
 
 			pros::c::delay(1000);
 
