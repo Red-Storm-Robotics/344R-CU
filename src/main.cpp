@@ -14,9 +14,8 @@ AutonRoutine auton_routine = AutonRoutine::Complex;
 Controller controller;
 ControllerButton intake_fwd(ControllerDigital::L1);
 ControllerButton intake_rev(ControllerDigital::L2);
-ControllerButton roller_fwd(ControllerDigital::R1);
-ControllerButton roller_rev(ControllerDigital::R2);
-ADIButton ball_detect('A');
+ControllerButton rollers(ControllerDigital::R1);
+ControllerButton cycle(ControllerDigital::R2);
 
 ControllerButton auton_one(ControllerDigital::A);
 ControllerButton auton_two(ControllerDigital::Y);
@@ -31,8 +30,9 @@ auto profiling = AsyncMotionProfileControllerBuilder()
 	.withOutput(drive)
 	.buildMotionProfileController();
 
-MotorGroup intake({11, -12, -13});
-Motor roller(-14);
+MotorGroup intake({11, -12});
+Motor lower_roller(-13);
+Motor upper_roller(-14);
 
 void draw_screen() {
 	// pros::lcd::clear();
@@ -116,17 +116,6 @@ void disabled() {}
 void competition_initialize() {}
 
 void wait_for_ball() {
-	const int timeout = 10000;
-	int start_time = pros::c::millis();
-	for (;;) {
-		if (pros::c::millis() - start_time > timeout) {
-			return;
-		}
-		if (ball_detect.isPressed()) {
-			return;
-		}
-		pros::c::delay(10);
-	}
 	pros::c::delay(500);
 }
 
@@ -269,8 +258,47 @@ void autonomous() {
  * task, not resume it from where it left off.
  */
 
-int intake_state = 0;
-int roller_state = 0;
+enum class CycleState {
+	intakeFwd,
+	intakeRev,
+	rollerFwd,
+	allFwd,
+	allStop
+};
+
+CycleState cycle_state = CycleState::allStop;
+
+const int MAX_VOLT = 12000;
+
+void setMotors() {
+	switch(cycle_state) {
+		case CycleState::intakeFwd:
+			intake.moveVoltage(MAX_VOLT);
+			lower_roller.moveVoltage(MAX_VOLT);
+			upper_roller.moveVoltage(0);
+			break;
+		case CycleState::intakeRev:
+			intake.moveVoltage(-MAX_VOLT);
+			lower_roller.moveVoltage(-MAX_VOLT);
+			upper_roller.moveVoltage(0);
+			break;
+		case CycleState::rollerFwd:
+			intake.moveVoltage(-MAX_VOLT);
+			lower_roller.moveVoltage(MAX_VOLT);
+			upper_roller.moveVoltage(MAX_VOLT);
+			break;
+		case CycleState::allFwd:
+			intake.moveVoltage(MAX_VOLT);
+			lower_roller.moveVoltage(MAX_VOLT);
+			upper_roller.moveVoltage(MAX_VOLT);
+			break;
+		case CycleState::allStop:
+		default:
+			intake.moveVoltage(0);
+			lower_roller.moveVoltage(0);
+			upper_roller.moveVoltage(0);
+	}
+}
 
 void opcontrol() {
 
@@ -278,44 +306,27 @@ void opcontrol() {
 		drive->getModel()->arcade(controller.getAnalog(ControllerAnalog::leftY),
                               controller.getAnalog(ControllerAnalog::rightX));
 
-		if (ball_detect.changedToPressed()) {
-			if (intake_state > 0) {
-				intake_state = 0;
-			}
-		} else if (intake_fwd.changedToPressed()) {
-			if (intake_state > 0) {
-				intake_state = 0;
+		if (intake_fwd.changedToPressed()) {
+			if (cycle_state == CycleState::intakeFwd) {
+				cycle_state = CycleState::allStop;
 			} else {
-				intake_state = 12000;
-			}
-		} else if (intake_rev.changedToPressed()) {
-			if (intake_state < 0) {
-				intake_state = 0;
-			} else {
-				intake_state = -12000;
+				cycle_state = CycleState::intakeFwd;
 			}
 		}
-
-		if (roller_fwd.changedToPressed()) {
-			if (roller_state > 0) {
-				roller_state = 0;
-			} else {
-				roller_state = 12000;
-			}
-		} else if (roller_rev.changedToPressed()) {
-			if (roller_state < 0) {
-				roller_state = 0;
-			} else {
-				roller_state = -12000;
+		if (intake_rev.isPressed()) {
+			cycle_state = CycleState::intakeRev;
+		} else if (rollers.isPressed()) {
+			cycle_state = CycleState::rollerFwd;
+		} else if (cycle.isPressed()) {
+			cycle_state = CycleState::allFwd;
+		} else {
+			if (cycle_state != CycleState::intakeFwd
+					&& cycle_state != CycleState::allStop) {
+				cycle_state = CycleState::allStop;
 			}
 		}
+		setMotors();
 
-		if (auton_one.isPressed() && auton_two.isPressed()) {
-			autonomous();
-		}
-
-		intake.moveVoltage(intake_state);
-		roller.moveVoltage(roller_state);
 		pros::delay(10);
 	}
 }
