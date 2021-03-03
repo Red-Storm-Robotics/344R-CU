@@ -14,6 +14,8 @@ AutonRoutine auton_routine = AutonRoutine::Complex;
 Controller controller;
 ControllerButton intake_fwd(ControllerDigital::L1);
 ControllerButton intake_rev(ControllerDigital::L2);
+ControllerButton roller_fwd(ControllerDigital::R1);
+ControllerButton roller_rev(ControllerDigital::R2);
 ADIButton ball_detect('A');
 
 ControllerButton auton_one(ControllerDigital::A);
@@ -29,7 +31,8 @@ auto profiling = AsyncMotionProfileControllerBuilder()
 	.withOutput(drive)
 	.buildMotionProfileController();
 
-MotorGroup intake({11, -12});
+MotorGroup intake({11, -12, -13});
+Motor roller(-14);
 
 void draw_screen() {
 	// pros::lcd::clear();
@@ -267,6 +270,7 @@ void autonomous() {
  */
 
 int intake_state = 0;
+int roller_state = 0;
 
 void opcontrol() {
 
@@ -292,11 +296,26 @@ void opcontrol() {
 			}
 		}
 
+		if (roller_fwd.changedToPressed()) {
+			if (roller_state > 0) {
+				roller_state = 0;
+			} else {
+				roller_state = 12000;
+			}
+		} else if (roller_rev.changedToPressed()) {
+			if (roller_state < 0) {
+				roller_state = 0;
+			} else {
+				roller_state = -12000;
+			}
+		}
+
 		if (auton_one.isPressed() && auton_two.isPressed()) {
 			autonomous();
 		}
 
 		intake.moveVoltage(intake_state);
+		roller.moveVoltage(roller_state);
 		pros::delay(10);
 	}
 }
